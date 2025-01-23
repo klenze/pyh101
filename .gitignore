@@ -1,0 +1,10 @@
+*.o
+*.swp
+build/
+dist
+inst
+*foo
+testme
+.gdb*
+h101.egg-info/
+events.struct

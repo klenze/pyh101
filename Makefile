@@ -7,7 +7,7 @@ all: testme
 
 
 %.o: %.c
-	gcc -Wall -g -c -I${UCESB_DIR}/hbook -o $@ $<
+	gcc -Wall -g -c -I. -I${UCESB_DIR}/hbook -o $@ $<
 
 testme: test.o ext_data_client.o
 	g++ -Wall -g $^  -o $@

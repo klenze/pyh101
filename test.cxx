@@ -1,7 +1,8 @@
 //#include <ext_data_clnt.hh>
+
+#define EXT_DATA_CLIENT_INTERNALS
 #include "ext_data_client.h"
 #include <string.h>
-#include "ext_data_item.h"
 
 //#include <ext_data_struct_info.hh>
 
@@ -33,7 +34,7 @@ int main()
    while(items)
    {
       if (items->_var_name[0]!='N')
-	printf("%s %d, %d\n", items->_var_name, items->_offset, items->_length);
+	printf("%s 0x%x, %d %s\n", items->_var_name, items->_var_type, items->_length, items->_var_ctrl_name);
       tot+=items->_length;
       if (!strcmp(target, items->_var_name))
       {

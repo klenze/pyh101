@@ -18,9 +18,9 @@
  * MA  02110-1301  USA
  */
 
-#include "ext_data_proto.h"
+#define EXT_DATA_CLIENT_INTERNALS
 #include "ext_data_client.h"
-#include "ext_data_item.h"
+#include "ext_data_proto.h"
 
 /* #include "ext_file_writer.hh" */
 

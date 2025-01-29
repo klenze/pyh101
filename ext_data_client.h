@@ -18,7 +18,6 @@
  * MA  02110-1301  USA
  */
 
-
 #ifndef __EXT_DATA_CLIENT_H__
 #define __EXT_DATA_CLIENT_H__
 
@@ -93,7 +92,7 @@ struct ext_data_structure_info *ext_data_struct_info_alloc();
 /* Deallocate structure information.
  *
  * @struct_info     Information structure.
- /item*/
+ */
 
 void ext_data_struct_info_free(struct ext_data_structure_info *struct_info);
 

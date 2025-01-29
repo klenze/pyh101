@@ -2551,7 +2551,7 @@ int ext_data_setup(struct ext_data_client *client,
 
   /* It's ok to read data. */
   client->_state = EXT_DATA_STATE_SETUP_READ;
-  
+
   return 0;
 }
 

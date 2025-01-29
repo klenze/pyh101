@@ -18,7 +18,6 @@
  * MA  02110-1301  USA
  */
 
-
 #ifndef __EXT_DATA_CLIENT_H__
 #define __EXT_DATA_CLIENT_H__
 

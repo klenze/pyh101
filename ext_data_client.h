@@ -92,7 +92,7 @@ struct ext_data_structure_info *ext_data_struct_info_alloc();
 /* Deallocate structure information.
  *
  * @struct_info     Information structure.
- /item*/
+ */
 
 void ext_data_struct_info_free(struct ext_data_structure_info *struct_info);
 

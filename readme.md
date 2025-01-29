@@ -17,7 +17,7 @@ While this has a low complexity overhead in terms of software dependencies, it d
 Some shortcomings include:
 * There is no mechanism to transmit the events of a TTree piecewise over a Fifo. This means that if one wants to do online processing, one will have to create a file which will grow large over time (plus having a TFile open for writing in one process and reading in another might be non-trivial). 
 * TTree::Draw is kind of terrible. For simple cases like ``h101->Draw("EVENTNO")``, it works well enough. In more complex cases, it will fail. For example, if Av and Bv are ``uint32_t`` arrays of different and variable sizes, it seems that ``Av-Bv`` and ``-(Bv-Av)`` will not yield the same results.
-* The h101 tree created by rootwriter employs encodes all data into 32bit fields and 32 bit arrays. While this is a very reasonable choice, it does not make the data very convienient to work with. For example, one might not want to write out all the channels for which no data was recorded. ucesb features zero suppression (which I think is really "suppression of data for which no raw data existed"). Using this in your h101 tree will give you three fields:
+* The h101 tree created by rootwriter employs encodes all data into 32bit fields and 32 bit arrays. While this is a very reasonable choice, it does not make the data very convenient to work with. For example, one might not want to write out all the channels for which no data was recorded. ucesb features zero suppression (which I think is really "suppression of data for which no raw data existed"). Using this in your h101 tree will give you three fields:
   * FOO - a uint32 which just contains the number of actual entries in the following arrays (e.g. FOO=2)
   * FOOI - a uint32 array which contains the indices (e.g. FOOI=[23, 42])
   * FOOv - an array of equal size which contains the actual data for each index (e.g. FOOv=[344, 2063], indicating that channel 23 saw a value of 334 and ch 42 saw 2063)
@@ -41,7 +41,7 @@ The following is not yet implemented:
 * Any features of ``struct_writer`` not encountered in R3B unpackers
    * Floating point data
 * Reading from TCP
-* Reading from a filename instead of a file decriptor
+* Reading from a filename instead of a file descriptor
 * Executing an unpacker (with arguments) as a subprocess
 * Closing and reopening a h101 object, starting at the first event of a file again
 

@@ -1,0 +1,6 @@
+{
+   ADDRESS_IN_RANGE/Invalid read of size 8
+   Memcheck:Addr8
+   fun:strncmp
+   fun:is_dst
+}

@@ -7,4 +7,4 @@ inst
 testme
 .gdb*
 h101.egg-info/
-events.struct
+*.struct

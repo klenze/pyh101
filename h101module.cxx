@@ -320,7 +320,7 @@ struct wrts_iteminfo: public base_iteminfo
 	    dest->ob_type=np64; //valid value
 	    uint64_t res{};
 	    for (int i=0; i<4; i++)
-		 res+=uint64_t(*(tn[i]))<<(8*i);
+		 res+=uint64_t(*(tn[i]))<<(16*i);
 	    if (rel) // we want to use relative white rabbits
 	    {
 		if (*rel==0) // base has not been set yet

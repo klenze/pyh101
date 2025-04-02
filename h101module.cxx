@@ -207,29 +207,54 @@ struct dict_iteminfo: public base_iteminfo
    PyObject* dict;
 };
 
+using str2item=std::map<std::string, ext_data_structure_item*>; 
+static ext_data_structure_item* getIfPresent(str2item m, std::string key)
+{
+   auto it=m.find(key);
+  if (it==m.end())
+	  return nullptr;
+   //printf("%s: %s ->%p\n", __FUNCTION__, key.c_str(), it->second);
+   return it->second;
+}
 
+static uint32_t* getPayload(char* buf, str2item m, std::string key)
+{
+  auto* res=getIfPresent(m, key);
+  CHECK(res, nullptr, "%s not found.", key.c_str());
+  return (reinterpret_cast<uint32_t*>(buf + res->_offset));
+}
 
 struct mult_iteminfo: public base_iteminfo
 {
-    uint32_t *length, *keys, *data;
+    uint32_t *v_length, *v_data;
+    uint32_t *m_length, *m_indices, *m_ends;
     using dictentry_t=std::pair<PyObject*, PyObject*>; // first is key (in outer dict), 2nd list
     std::unordered_map<uint32_t, dictentry_t> key2list;
     PyObject* dict;
     std::vector<PyObject*> current_lists;
-    mult_iteminfo(uint32_t maxlen,
-		   uint32_t* length_, uint32_t* keys_, uint32_t* data_, bool is_signed)
+    mult_iteminfo(uint32_t maxlen, std::string basename,
+		  char* buf, str2item m, bool is_signed)
 	    : base_iteminfo(maxlen, is_signed)
-	    , length(length_)
-	    , keys(keys_)
-	    , data(data_)
+	    , v_length(   getPayload(buf, m, basename)      )
+	    , v_data(     getPayload(buf, m, basename+"v")  )
+	    , m_length(   getPayload(buf, m, basename+"M")  )
+	    , m_indices(  getPayload(buf, m, basename+"MI") )
+	    , m_ends(     getPayload(buf, m, basename+"ME") )
 	    , dict(register_obj(PyDict_New()))
     {
+	static uint32_t zero=0;
+        if (!v_length || !v_data || !m_length || !m_indices || !m_ends)
+	{
+	   fprintf(stderr, "Required item(s) for ZZM %s not found, it will not be filled.\n", basename.c_str());
+	   v_length=&zero;
+	   m_length=&zero;
+	}
     }
 
     PyObject* find_or_make_list(uint32_t key)
     {
 	auto& m=this->key2list;
-	auto it=m.find(key); 
+	auto it=m.find(key);
 	if (it==m.end())
 	{
 	  PyObject* pykey=register_obj(PyArrayScalar_New(UInt32));
@@ -256,20 +281,20 @@ struct mult_iteminfo: public base_iteminfo
 	this->current_lists.clear();
 	PyDict_Clear(this->dict);
 
-        uint32_t len=*length;
-	CHECK( len<=max_values, RFAIL, "Illegal length: %d > %d",len, max_values);
-	uint32_t last_key=~keys[0];
-	PyObject* list{};
-	for (uint32_t i=0; i<len; i++)
+	CHECK(*v_length<=max_values, RFAIL, "Illegal length: %d > %d", *v_length, max_values);
+	CHECK(*v_length==0 || *v_length==m_ends[*m_length-1], RFAIL, "Inconsistent length for ZZM.",nullptr);
+
+	uint32_t j=0;
+	for (uint32_t i=0; i<*m_length; i++)
 	{
-	   auto k=keys[i];
-	   if (k!=last_key)
+	   auto k=m_indices[i];
+	   PyObject* list=find_or_make_list(k);
+           for(; j<m_ends[i]; j++)
 	   {
-		   list=find_or_make_list(k);
+	     PyObject* pyVal=this->value_list.at(j);
+	     reinterpret_cast<PyUInt32ScalarObject*>(pyVal)->obval=v_data[j];
+	     PyList_Append(list, pyVal);
 	   }
-	   PyObject* pyVal=this->value_list.at(i);
-	   reinterpret_cast<PyUInt32ScalarObject*>(pyVal)->obval=data[i];
-	   PyList_Append(list, pyVal);
 	}
 	return 0;
     }
@@ -354,15 +379,6 @@ struct H101
    uint64_t relwr_base{}; // offset for 'relative white rabbit'. 
 };
 
-static ext_data_structure_item* getIfPresent(std::map<std::string, ext_data_structure_item*> m, std::string key)
-{
-   auto it=m.find(key);
-   if (it==m.end())
-	  return nullptr;
-   //printf("%s: %s ->%p\n", __FUNCTION__, key.c_str(), it->second);
-   return it->second;
-}
-
 
 #define GETPTR(name) (reinterpret_cast<uint32_t*>(self->buf + name->_offset))
 
@@ -424,14 +440,18 @@ static void pythonize(H101* self)
 		continue;
 	     }
 	     auto* suffixI=getIfPresent(m, it.first+"I");
-	     auto* suffixE=getIfPresent(m, it.first+"E");
+
+	     if (getIfPresent(m, it.first+"E"))
+	     {
+		     //fprintf(stderr, "%s: field with E suffix exists, ignored.\n", item->_var_name);
+		     // we are in the index branch of a ZERO_SUPPRESSED_MULTI, ignore.
+		     continue;
+	     }
+	     auto* suffixME=getIfPresent(m, it.first+"ME");
 	     auto* suffixv=getIfPresent(m, it.first+"v");
 	     auto* payload=item;
-	     if (suffixv)
+             if (suffixv)
 		     payload=suffixv;
-	     else if (suffixE)
-		     payload=suffixE;
-
 	     uint32_t type = payload->_var_type &EXT_DATA_ITEM_TYPE_MASK ;
 	     bool is_signed;
 	     if (type==EXT_DATA_ITEM_TYPE_INT32)
@@ -453,6 +473,11 @@ static void pythonize(H101* self)
 	          // a single field. 
 	          mapped=new xint32_iteminfo(GETPTR(item), is_signed);
 	     }
+	     else if (payload==suffixv && suffixME)
+	     {
+	        // zero suppressed multi
+		mapped=new mult_iteminfo(payload->_length, it.first, self->buf, m, is_signed);	     
+	     }
 	     else if (payload==suffixv && !suffixI)
 	     {
 		 // a simple variable length array. 
@@ -463,15 +488,10 @@ static void pythonize(H101* self)
 		 //continue;
 		 mapped=new dict_iteminfo(payload->_length, GETPTR(item), GETPTR(suffixI), GETPTR(suffixv), is_signed);
 	     }
-	     else if (payload==suffixE && suffixI)
-	     {
-		mapped=new mult_iteminfo(payload->_length, GETPTR(item), GETPTR(suffixI), GETPTR(suffixE), is_signed);
-	     }
 	     else // unhandled for now
 	     {
-		     continue;
-		  printf("Ignored object %s with len=%d I=%d E=%d v=%d\n", item->_var_name, payload->_length,
-			  !! suffixI, !! suffixE, !! suffixv);
+		  printf("Ignored object %s with len=%d I=%d ME=%d v=%d\n", item->_var_name, payload->_length,
+			  !! suffixI, !! suffixME, !! suffixv);
 		  continue;
 	     }
 	     pythonize_reg_item(self, item->_var_name, mapped);
@@ -486,7 +506,7 @@ static void pythonize(H101* self)
 static void
 H101_dealloc(H101* self)
 {
-    printf("%s entered\n", __FUNCTION__ );
+    //printf("%s entered\n", __FUNCTION__ );
     if (self->dict)
        Py_XDECREF(self->dict);
     if (self->buf) free(self->buf);
@@ -499,13 +519,13 @@ H101_dealloc(H101* self)
     self->~H101();  // call the destructor.  
     self->ob_base=saved;
     Py_TYPE(self)->tp_free((PyObject *) self);
-    printf("%s done\n", __FUNCTION__ );
+    //printf("%s done\n", __FUNCTION__ );
 }
 
 static PyObject *
 H101_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
-	printf("%s entered\n", __FUNCTION__ );
+	//printf("%s entered\n", __FUNCTION__ );
    	H101 *self = (H101 *) type->tp_alloc(type, 0);
 	if (!self)
 	    return nullptr;
@@ -516,7 +536,7 @@ H101_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	PyObject saved=self->ob_base;
 	new (self) H101(); // default init
 	self->ob_base=saved;
-        printf("%s exiting\n", __FUNCTION__ );
+        //printf("%s exiting\n", __FUNCTION__ );
 	return (PyObject*) self;
 }
 
@@ -531,7 +551,7 @@ static int
 H101_init(H101 *self, PyObject *args, PyObject *kwds)
 {
     noerrno;
-    printf("%s entered\n", __FUNCTION__ );
+    //printf("%s entered\n", __FUNCTION__ );
     // at some point, we would like to call our c++ constructor.
     auto base=self->ob_base; // don't mess with python
     //new (self) H101(); 
@@ -568,7 +588,7 @@ H101_init(H101 *self, PyObject *args, PyObject *kwds)
         auto& m=self->itemmap;
 
         pythonize(self);
-        printf("%s done\n", __FUNCTION__);
+        //printf("%s done\n", __FUNCTION__);
 	return 0;
 }
 
@@ -639,7 +659,7 @@ PyMODINIT_FUNC
 PyInit_h101(void)
 {
     noerrno;
-    printf("%s entered :-)\n", __FUNCTION__ );
+    //printf("%s entered :-)\n", __FUNCTION__ );
     import_array();
     mkH101_type();
     if (PyType_Ready(&H101_type)<0) return nullptr;
@@ -652,6 +672,6 @@ PyInit_h101(void)
 	Py_DECREF(m);
 	return nullptr;
     }
-    printf("initialized module\n");   
+    //printf("initialized module\n");   
     return m;
 }

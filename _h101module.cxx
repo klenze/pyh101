@@ -41,10 +41,34 @@
 static PyModuleDef h101module =
 {
     .m_base = PyModuleDef_HEAD_INIT,
-    .m_name = "h101",
+    .m_name = "_h101",
     .m_doc = "",
     .m_size = -1,
 };
+
+
+enum primitive
+{
+   UINT32 = 0,
+   INT32  = 1,
+   FLOAT32 = 2
+};
+
+PyObject* make_primitive(primitive t)
+{
+   switch(t)
+   {
+       case UINT32:
+	   return PyArrayScalar_New(UInt32);
+       case INT32:
+	   return PyArrayScalar_New(Int32);
+       case FLOAT32:
+	   return PyArrayScalar_New(Float32);
+       default:
+	   (void)0;
+    }
+    return nullptr;
+}
 
 
 struct base_iteminfo
@@ -53,17 +77,13 @@ struct base_iteminfo
    std::vector<PyObject*> value_list; // contains preconstructed items, then other stuff we still have a reference to. 
    const char* name=nullptr;
 
-   base_iteminfo(int max_values_, bool is_signed)
+   base_iteminfo(int max_values_, primitive type)
     :   max_values(max_values_)
     ,   value_list(max_values_)
    {
 	for (auto& v: this->value_list)
 	{
-	   if (!is_signed)
-    	      v=PyArrayScalar_New(UInt32);
-	   else
-           
-    	      v=PyArrayScalar_New(Int32);
+    	   v=make_primitive(type);
 	   Py_XINCREF(v);
 	}
    }
@@ -92,8 +112,8 @@ struct xint32_iteminfo: public base_iteminfo
     uint32_t* src;
     PyUInt32ScalarObject* dest;
 
-    xint32_iteminfo(uint32_t* src_, bool is_signed)
-	    : base_iteminfo(1, is_signed)
+    xint32_iteminfo(uint32_t* src_, primitive t)
+	    : base_iteminfo(1, t)
 	    , src(src_)
 	    ,  dest(reinterpret_cast<PyUInt32ScalarObject*>
 		(this->value_list.at(0)))
@@ -112,6 +132,32 @@ struct xint32_iteminfo: public base_iteminfo
 
 };
 
+
+struct pyimp_iteminfo: public base_iteminfo
+{
+    PyObject * outp{}, * callback{};
+    pyimp_iteminfo(PyObject* outp_, PyObject* callback_)
+    : base_iteminfo(1, UINT32)
+    , outp(outp_)
+    , callback(register_obj(callback_))
+    {
+    }
+
+    int map_event() override
+    {
+	PyObject* result = PyObject_CallObject(callback, nullptr);
+	return result==Py_True;
+    }
+
+    PyObject* get_obj() override
+    {
+         return outp;
+    }
+
+};
+
+
+
 struct vector_iteminfo: public base_iteminfo
 {
    uint32_t* length;
@@ -119,8 +165,8 @@ struct vector_iteminfo: public base_iteminfo
    PyObject* list;
 
    vector_iteminfo(int maxlen, uint32_t* length_,
-  	 	   uint32_t* data_, bool is_signed)
-   : base_iteminfo(maxlen, is_signed)
+  	 	   uint32_t* data_, primitive t)
+   : base_iteminfo(maxlen, t)
 	, length(length_)
 	, data(data_)
 	, list(register_obj(PyList_New(0)))
@@ -162,8 +208,8 @@ struct dict_iteminfo: public base_iteminfo
 		 uint32_t* length_,
  	         uint32_t* keys_, 
 		 uint32_t* data_, 
-		 bool is_signed)
-  : base_iteminfo(2*maxlen, is_signed)
+		 primitive t)
+  : base_iteminfo(2*maxlen, t)
   , length(length_)
   , keys(keys_)
   , data(data_)
@@ -224,34 +270,13 @@ static uint32_t* getPayload(char* buf, str2item m, std::string key)
   return (reinterpret_cast<uint32_t*>(buf + res->_offset));
 }
 
-struct mult_iteminfo: public base_iteminfo
+struct dict_of_lists_iteminfo: public base_iteminfo // abstract!
 {
-    uint32_t *v_length, *v_data;
-    uint32_t *m_length, *m_indices, *m_ends;
-    using dictentry_t=std::pair<PyObject*, PyObject*>; // first is key (in outer dict), 2nd list
-    std::unordered_map<uint32_t, dictentry_t> key2list;
-    PyObject* dict;
-    std::vector<PyObject*> current_lists;
-    mult_iteminfo(uint32_t maxlen, std::string basename,
-		  char* buf, str2item m, bool is_signed)
-	    : base_iteminfo(maxlen, is_signed)
-	    , v_length(   getPayload(buf, m, basename)      )
-	    , v_data(     getPayload(buf, m, basename+"v")  )
-	    , m_length(   getPayload(buf, m, basename+"M")  )
-	    , m_indices(  getPayload(buf, m, basename+"MI") )
-	    , m_ends(     getPayload(buf, m, basename+"ME") )
-	    , dict(register_obj(PyDict_New()))
-    {
-	static uint32_t zero=0;
-        if (!v_length || !v_data || !m_length || !m_indices || !m_ends)
-	{
-	   fprintf(stderr, "Required item(s) for ZZM %s not found, it will not be filled.\n", basename.c_str());
-	   v_length=&zero;
-	   m_length=&zero;
-	}
-    }
-
-    PyObject* find_or_make_list(uint32_t key)
+   using dictentry_t=std::pair<PyObject*, PyObject*>; // first is key (in outer dict), 2nd list
+   std::unordered_map<uint32_t, dictentry_t> key2list;
+   std::vector<PyObject*> current_lists;
+   PyObject* dict;
+   PyObject* find_or_make_list(uint32_t key)
     {
 	auto& m=this->key2list;
 	auto it=m.find(key);
@@ -271,8 +296,44 @@ struct mult_iteminfo: public base_iteminfo
 	return list;
     }
 
+    dict_of_lists_iteminfo(uint32_t maxlen, primitive t)
+        : base_iteminfo(maxlen, t)
+	, dict(register_obj(PyDict_New()))
+    {}
+
+    PyObject* get_obj() override
+    {
+       return dict;
+    }
+
+};
+
+struct mult_iteminfo: public dict_of_lists_iteminfo
+{
+    uint32_t *v_length, *v_data;
+    uint32_t *m_length, *m_indices, *m_ends;
+    bool failed=0;
+    mult_iteminfo(uint32_t maxlen, std::string basename,
+		  char* buf, str2item m, primitive t)
+	    : dict_of_lists_iteminfo(maxlen, t)
+	    , v_length(   getPayload(buf, m, basename)      )
+	    , v_data(     getPayload(buf, m, basename+"v")  )
+	    , m_length(   getPayload(buf, m, basename+"M")  )
+	    , m_indices(  getPayload(buf, m, basename+"MI") )
+	    , m_ends(     getPayload(buf, m, basename+"ME") )
+    {
+	static uint32_t zero=0;
+        if (!v_length || !v_data || !m_length || !m_indices || !m_ends)
+	{
+	   fprintf(stderr, "Required item(s) for ZZM %s not found, it will not be filled.\n", basename.c_str());
+	   v_length=&zero;
+	   m_length=&zero;
+	}
+    }
+
     int map_event() override
     {
+	failed=0;
 	// always clear all nonempty lists in the beginning
 	// if the user has a previously obtained reference to any particular list
 	// there should not be data from prior events in it. 
@@ -281,8 +342,8 @@ struct mult_iteminfo: public base_iteminfo
 	this->current_lists.clear();
 	PyDict_Clear(this->dict);
 
-	CHECK(*v_length<=max_values, RFAIL, "Illegal length: %d > %d", *v_length, max_values);
-	CHECK(*v_length==0 || *v_length==m_ends[*m_length-1], RFAIL, "Inconsistent length for ZZM.",nullptr);
+	CHECK(*v_length<=max_values, failed=RFAIL, "Illegal length: %d > %d", *v_length, max_values);
+	CHECK(*v_length==0 || *v_length==m_ends[*m_length-1], failed=RFAIL, "Inconsistent length for ZZM. %s", "");
 
 	uint32_t j=0;
 	for (uint32_t i=0; i<*m_length; i++)
@@ -299,11 +360,124 @@ struct mult_iteminfo: public base_iteminfo
 	return 0;
     }
 
+};
+
+
+#if 0 ////////////////////////////
+struct finetime_hist
+{
+	const size_t TDCBINS         = 512;
+	const size_t UPDATE_INTERVAL = 1000;   // how often should we update the calibration?
+	const size_t MINSTAT         = 10000;  // min statistics before returning non-NaN results.
+	const size_t STAT_LIFETIME   = 100000; // time after which a count is downscaled to 1/e.
+	std::array<double, TDCBINS> pdf{};
+
+	int newcounts=0;
+
+	std::array<double, TDCBINS> cdf{};
+
+	void update_cdf()
+	{
+	     if (pdf_int<MINSTAT)
+		return;
+	     double s=0;
+
+	     double pdf_int = 0;
+	     for (int i=0; i<TDCBINS; i++)
+		pdf_int+=pdf[i];
+
+	     for (int i=0; i<TDCBINS; i++)
+	     {
+		s+=pdf[i]/2/pdf_int;
+		cdf[i]=s;
+		s+=pdf[i]/2/pdf_int;
+		pdf[i]*=exp(-UPDATE_INTERVAL/STAT_LIFETIME);
+	     }
+	     newcounts=0;
+        }
+
+	double apply(uint32_t fine)
+	{
+	    if (fine>=TDCBINS)
+	        return NAN;
+	    pdf[fine]+=1.0;
+	    newcount++;
+	    if (newcount>=UPDATE_INTERVAL)
+		update_cdf();
+	    return cdf[fine];
+	}
+	
+
+	finetime_hist()
+	{
+	    for (int i=0; i<TDCBINS; i++)
+	}
+};
+
+struct tdc_iteminfo: public base_iteminfo
+{
+	const double COARSE_PERIOD=5; //ns
+	const size_t COARSE_WRAP=1024;
+
+	std::map<uint32_t, finetime_hist> > hists;
+	multi_iteminfo *coarse{}, *fine{};
+	PyObject* dict;
+
+	static tdc_iteminfo* create(uint32_t maxlength, multi_iteminfo *c, multi_iteminfo *f)
+	{
+	     if (c->max_values!=f->max_values)
+		return nullptr;
+	     auto res=new tdc_iteminfo;
+	     res->coarse=c;
+	     res->fine=f;
+	     return res;
+	}
+
+	private:
+	tdc_iteminfo(uint32_t maxlength)
+	 : dict_of_lists_iteminfo(maxlength, FLOAT32)
+	{}
+	
     PyObject* get_obj() override
     {
        return dict;
     }
+
+    int map_event() override
+    {
+	for (auto p:this->current_lists)
+	    PyList_SetSlice(p, 0, PY_SSIZE_T_MAX, NULL); // aka PyList_Clear
+	this->current_lists.clear();
+	PyDict_Clear(this->dict);
+	if (coarse->failed || fine->failed) 
+	    return RFAIL;
+
+	CHECK(fine->v_length==coarse->v_length, RFAIL, "Inconsistent number of entries between coarse and fine time arrays: len(coarse)=%d, len(fine)=%d"
+	    , coarse->v_length, fine->v_length );
+	CHECK(fine->m_length==coarse->m_length, RFAIL, "Inconsistent number of entries between coarse and fine time index arrays: len(coarse)=%d, len(fine)=%d"
+	    , coarse->m_length, fine->m_length );
+
+	uint32_t j=0;
+	for (uint32_t i=0; i<*(fine->m_length); i++)
+	{
+	   auto k=fine->m_indices[i];
+	   CHECK(fine->m_indices[i]==coarse->m_indices[i], "Index missmatch at i=%d: %d vs %d", i, coarse->m_indices[i], fine->m_indices[i]);
+	   PyObject* list=find_or_make_list(k);
+	   CHECK(fine->m_ends[i]==coarse->m_ends[i], "Ends mismatch at i=%d: %d vs %d", i, coarse->m_ends[i], fine->m_ends[i]);
+           for(; j<m_ends[i]; j++)
+	   {
+	     PyObject* pyVal=this->value_list.at(j);
+	     reinterpret_cast<PyFloat32ScalarObject*>(pyVal)->obval=v_data[j]; // TODO
+	     PyList_Append(list, pyVal);
+	   }
+	}
+	return 0;
+    }
+
+
 };
+#endif // 0 -----------------------
+
 
 struct wrts_iteminfo: public base_iteminfo
 {
@@ -314,7 +488,7 @@ struct wrts_iteminfo: public base_iteminfo
         PyObject* dest;
 	PyTypeObject* np64;
 	wrts_iteminfo(uint32_t* id_, tn_t tn_, uint64_t* rel_)
-	: base_iteminfo(0, false)
+	: base_iteminfo(0, UINT32)
 	, id(id_)
 	, tn(tn_)
 	, rel(rel_)
@@ -364,6 +538,7 @@ struct wrts_iteminfo: public base_iteminfo
        }
 };
 
+
 struct H101
 {
   PyObject ob_base;
@@ -376,6 +551,7 @@ struct H101
    char* buf{};
    size_t buflen{};
    std::vector<base_iteminfo*> items;
+   std::map<std::string, base_iteminfo*> str2iteminfo;
    uint64_t relwr_base{}; // offset for 'relative white rabbit'. 
 };
 
@@ -391,6 +567,7 @@ pythonize_reg_item(H101* self, const char* str, base_iteminfo* mapped)
     	mapped->name=str;
 	PyDict_SetItem(self->dict, name, mapped->get_obj());
 	self->items.push_back(mapped);
+	self->str2iteminfo[str]=mapped;
 }
 
 static void pythonize_wrts(H101* self, const std::string& base)
@@ -422,8 +599,7 @@ static void pythonize_wrts(H101* self, const std::string& base)
 }
 
 
-
-static void pythonize(H101* self)
+static void pythonize1(H101* self) // stage 1: process raw items
 {
 	auto& m = self->itemmap;
         for (auto& it: m)
@@ -453,11 +629,11 @@ static void pythonize(H101* self)
              if (suffixv)
 		     payload=suffixv;
 	     uint32_t type = payload->_var_type &EXT_DATA_ITEM_TYPE_MASK ;
-	     bool is_signed;
+	     primitive t ;
 	     if (type==EXT_DATA_ITEM_TYPE_INT32)
-		is_signed=1;
+		t=INT32;
 	     else if (type==EXT_DATA_ITEM_TYPE_UINT32)
-		is_signed=0;
+		t=UINT32;
 	     else
 	     {
 		  fprintf(stderr, "Item %s has type %d, which is not supported yet. Ignored.\n", payload->_var_name,
@@ -471,22 +647,25 @@ static void pythonize(H101* self)
 			pythonize_wrts(self, it.first.substr(0, len-3));
 
 	          // a single field. 
-	          mapped=new xint32_iteminfo(GETPTR(item), is_signed);
+	          mapped=new xint32_iteminfo(GETPTR(item), t);
 	     }
 	     else if (payload==suffixv && suffixME)
 	     {
 	        // zero suppressed multi
-		mapped=new mult_iteminfo(payload->_length, it.first, self->buf, m, is_signed);	     
+		//int len=it.first.size();
+		//if (it.first.substr(len-2, len)=="LF")
+		//     pythonize_tdc(self, it.first.substr(0, len-1)); // try, might silently fail. 
+		mapped=new mult_iteminfo(payload->_length, it.first, self->buf, m, t);	     
 	     }
 	     else if (payload==suffixv && !suffixI)
 	     {
 		 // a simple variable length array. 
-		 mapped=new vector_iteminfo(payload->_length, GETPTR(item), GETPTR(payload), is_signed);
+		 mapped=new vector_iteminfo(payload->_length, GETPTR(item), GETPTR(payload), t);
 	     }
 	     else if (payload==suffixv && suffixI)
 	     {
 		 //continue;
-		 mapped=new dict_iteminfo(payload->_length, GETPTR(item), GETPTR(suffixI), GETPTR(suffixv), is_signed);
+		 mapped=new dict_iteminfo(payload->_length, GETPTR(item), GETPTR(suffixI), GETPTR(suffixv), t);
 	     }
 	     else // unhandled for now
 	     {
@@ -500,6 +679,15 @@ static void pythonize(H101* self)
 	}
 
 }
+
+static void pythonize2(H101* self)  // stage 2: process stage one processors
+{
+	auto& m = self->str2iteminfo;
+	for (auto& it: m)
+	{
+	}
+}
+
 
 #undef GETPTR
 
@@ -587,9 +775,30 @@ H101_init(H101 *self, PyObject *args, PyObject *kwds)
 	self->buflen=tot;
         auto& m=self->itemmap;
 
-        pythonize(self);
+        pythonize1(self);
+        pythonize2(self);
         //printf("%s done\n", __FUNCTION__);
 	return 0;
+}
+
+static PyObject * 
+H101_addfield(H101* self, PyObject * args, PyObject * kwds)
+{
+   PyObject * outp{}, * callback{};
+   char * name{};
+   char* keywordlist[]={"name", "outp", "callback",  nullptr};
+   if (!PyArg_ParseTupleAndKeywords(args, kwds, "sOO:H101::addfield", keywordlist, &name, &outp, &callback))
+   {
+	Py_XINCREF(Py_False);
+	return Py_False;
+   }
+   Py_XINCREF(outp);
+   Py_XINCREF(callback);
+   auto* ii=new pyimp_iteminfo(outp, callback);
+   pythonize_reg_item(self, name, ii);
+
+   Py_XINCREF(Py_True);
+   return Py_True;
 }
 
 static PyObject *
@@ -627,6 +836,7 @@ static PyMethodDef H101_methods[] =
 {
 	{"getevent", (PyCFunction)H101_getevent, METH_NOARGS, "Reads the next event."},
 	{"getdict", (PyCFunction)H101_getdict, METH_NOARGS, "Get the dictionary of parsed h101 fields"},
+	{"addfield", (PyCFunction)H101_addfield, METH_VARARGS | METH_KEYWORDS, "Add an iteminfo field filled from python."},
 	{nullptr}
 };
 static PyTypeObject H101_type
@@ -656,7 +866,7 @@ void mkH101_type()
 
 
 PyMODINIT_FUNC
-PyInit_h101(void)
+PyInit__h101(void)
 {
     noerrno;
     //printf("%s entered :-)\n", __FUNCTION__ );

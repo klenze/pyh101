@@ -20,8 +20,9 @@ npinc="-I"+sysconfig.get_paths()["purelib"]+"/numpy/_core/include/"
 
 setup(name="h101", 
       install_requires=['numpy'],
-      ext_modules=[Extension(name="h101", 
-                             sources=["h101module.cxx", "ext_data_client.c"],
+      packages=["h101"],
+      ext_modules=[Extension(name="_h101", 
+                             sources=["_h101module.cxx", "ext_data_client.c"],
                              extra_compile_args=["-O0","-fno-inline-small-functions", "-g", "-Wno-unused-function", "-Wno-unused-variable", 
                                                  "-Wno-write-strings", # PyArg kw
                                                  "-I"+toplevel,

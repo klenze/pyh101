@@ -8,3 +8,4 @@ testme
 .gdb*
 h101.egg-info/
 *.struct
+*/__pycache__/*

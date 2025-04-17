@@ -2,6 +2,7 @@ from _h101 import *
 
 import numpy, math, sys, os, subprocess
 import traceback, copy
+import trigger_map
 
 if not 'UCESB_DIR' in os.environ:
     raise RuntimeError("Environment UCESB_DIR not set.")
@@ -22,14 +23,16 @@ class custom_iteminfo:
             res=self.map_event()
             return res==None or res==True
         except Exception as ex:
-            print("Error when trying to calculate %s -- disabled.")
-            traceback.print_exception(ex)
+            print("Error when trying to calculate %s -- disabled." % self.name)
+            print("Exception was: %s"%ex)
+            traceback.print_tb(ex.__traceback__)
+            print("-------")
             self.buggy=True
             try: 
                 self.output.clear()
             except Exception:
                 pass
-            raise ex
+            exit(1)
             return False
 
 
@@ -56,10 +59,9 @@ class finetime_cal:
         self.mincount=1e4           # statistics required before we apply the calibration
         self.update_interval = 2000 # how often should we recalculate the CDF?
         self.stat_lifetime   = 1e5  # how long does a count contribute to the calibration?
-
         if True:
-            self.mincount=500
-            self.update_interval=500
+            self.mincount=2000
+            self.update_interval=2000
 
     def updateCDF(self):
         """Update the cumulative distribution function from the PMF"""
@@ -122,6 +124,7 @@ class tdc_iteminfo(custom_iteminfo):
         self.coarse=coarse
         self.fine=fine
         self.is_trailing=is_trailing
+        self.coarse_period   = 5 #ns
     @staticmethod
     def _listify(x):
         if type(x)==list:
@@ -136,7 +139,7 @@ class tdc_iteminfo(custom_iteminfo):
             ck=tdc_iteminfo._listify(self.coarse[k])
             fk=tdc_iteminfo._listify(self.fine[k])
             for c, f in zip(ck, fk):
-                h=tdc_hit(c-cal.cal(f), is_trailing=self.is_trailing)
+                h=tdc_hit((c-cal.cal(f))*self.coarse_period, is_trailing=self.is_trailing)
                 h.coarse=c
                 h.fine=f
                 out.append(h)
@@ -175,6 +178,8 @@ class tot_iteminfo(custom_iteminfo):
         d=myh101.getdict()
         for k in list(d.keys()):
             if k[-2:]!="CL":
+                continue
+            if k[0]=='N': # neuland
                 continue
             base=k[:-2]
             cl=d.get(base+"CL") 

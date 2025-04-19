@@ -543,6 +543,7 @@ struct H101
 {
   PyObject ob_base;
 //   PyObject_HEAD;
+   PyObject* triggermap {};
    int fd;
    std::vector<std::string> fieldnames{};
    PyObject* dict {};
@@ -565,7 +566,8 @@ pythonize_reg_item(H101* self, const char* str, base_iteminfo* mapped)
 	PyObject* name = PyUnicode_FromString(strdup(str));
         //Py_XINCREF(name);
     	mapped->name=str;
-	PyDict_SetItem(self->dict, name, mapped->get_obj());
+	if (mapped->get_obj()!=nullptr && mapped->get_obj()!=Py_None)
+	   PyDict_SetItem(self->dict, name, mapped->get_obj());
 	self->items.push_back(mapped);
 	self->str2iteminfo[str]=mapped;
 }
@@ -707,6 +709,7 @@ H101_dealloc(H101* self)
     self->~H101();  // call the destructor.  
     self->ob_base=saved;
     Py_TYPE(self)->tp_free((PyObject *) self);
+    Py_XDECREF(self->triggermap);
     //printf("%s done\n", __FUNCTION__ );
 }
 
@@ -752,6 +755,8 @@ H101_init(H101 *self, PyObject *args, PyObject *kwds)
 	self->dict = PyDict_New();
 	Py_XINCREF(self->dict);
 	self->client = ext_data_from_fd(self->fd);
+	Py_XINCREF(Py_None);
+	self->triggermap=Py_None;
 	int res{};
 	uint32_t map_success = 0;
 	printf("errno=%d\n", errno);
@@ -829,6 +834,7 @@ H101_getdict(H101* self, PyObject *Py_UNUSED(ignored))
 }
 
 static PyMemberDef H101_members[] = {
+	{"triggermap", offsetof(H101, triggermap),  T_OBJECT_EX},
 	{nullptr, 0, 0}
 };
 
@@ -862,6 +868,7 @@ void mkH101_type()
     SetH101(init,(initproc));
     SetH101(dealloc, (destructor));
     SetH101(methods,);
+    SetH101(members,);
 }    
 
 

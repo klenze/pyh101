@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import subprocess, sys, os, re, os.path
-from namespace_magic import namespace_magic
+from h101.namespace_magic import namespace_magic
 
 reg=""
 reg+="^SIGNAL[(]"

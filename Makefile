@@ -1,5 +1,5 @@
 all: testme
-	pip3 install .
+	pip3 install . -v
 
 
 %.o: %.cxx

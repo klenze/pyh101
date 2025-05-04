@@ -42,11 +42,15 @@ class finetime_cal:
 
 
 class tdc_hit:
-    def __init__(self, time, tot=nan, trig=nan, is_trailing=False):
-        self.time=time
+    def __init__(self, time=None, tot=nan, trig=nan, is_trailing=False):
+        if time!=None:
+            self.time=time
+            self.weight=1
+        else:
+            self.time=0.0
+            self.weight=0
         self.tot=tot
         self.is_trailing=is_trailing
-        self.weight=1
         self.trig=trig
     def getTime(self):
         return self.time/self.weight
@@ -136,7 +140,7 @@ class tot_iteminfo(custom_iteminfo):
     def map_event(self):
         self.res.clear()
         for k, le in self.leading.res.items():
-            out=self.res[k]=[]
+            out=[]
             tr=self.trailing.res.get(k, [])
             trig=nan
             if self.trig and len(self.trig.res.get(k, []))==1:
@@ -150,6 +154,8 @@ class tot_iteminfo(custom_iteminfo):
                     prev.trig=trig
                     out.append(prev)
                 prev=it
+            if len(out)>0: 
+                self.res[k]=out
     @staticmethod
     def addFields(myh101):
         d=myh101.getdict()

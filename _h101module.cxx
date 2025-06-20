@@ -543,7 +543,8 @@ struct H101
 {
   PyObject ob_base;
 //   PyObject_HEAD;
-   PyObject* triggermap {};
+   PyObject* triggermap {}; // to be set from python
+   PyObject* unpacker   {}; // to be set from python
    int fd;
    std::vector<std::string> fieldnames{};
    PyObject* dict {};
@@ -710,6 +711,7 @@ H101_dealloc(H101* self)
     self->ob_base=saved;
     Py_TYPE(self)->tp_free((PyObject *) self);
     Py_XDECREF(self->triggermap);
+    Py_XDECREF(self->unpacker);
     //printf("%s done\n", __FUNCTION__ );
 }
 
@@ -757,6 +759,8 @@ H101_init(H101 *self, PyObject *args, PyObject *kwds)
 	self->client = ext_data_from_fd(self->fd);
 	Py_XINCREF(Py_None);
 	self->triggermap=Py_None;
+	Py_XINCREF(Py_None);
+	self->unpacker=Py_None;
 	int res{};
 	uint32_t map_success = 0;
 	printf("errno=%d\n", errno);
@@ -834,7 +838,8 @@ H101_getdict(H101* self, PyObject *Py_UNUSED(ignored))
 }
 
 static PyMemberDef H101_members[] = {
-	{"triggermap", offsetof(H101, triggermap),  T_OBJECT_EX},
+	{"triggermap", T_OBJECT_EX, offsetof(H101, triggermap)},
+	{"unpacker",   T_OBJECT_EX, offsetof(H101, unpacker)},
 	{nullptr, 0, 0}
 };
 

@@ -26,6 +26,7 @@ def mkh101(inputs, unpacker=None):
                             stdout=subprocess.PIPE)
         res=H101(fd=sp.stdout.fileno())
         res.triggermap=trigger_map.parse_channels(os.path.dirname(upexps))
+        res.unpacker=sp
         t=test_iteminfo()
         t.register(res)
         tdc_iteminfo.addFields(res)

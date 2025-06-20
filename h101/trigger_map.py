@@ -13,7 +13,9 @@ reg+="[)];?$"
 signal=re.compile(reg)
 
 def parse_channels(directory):
-    f=subprocess.check_output("gcc -I gen_%s -E mapping.hh"%(os.path.basename(directory)),
+    #f=subprocess.check_output("gcc -I gen_%s -E mapping.hh"%(os.path.basename(directory)),
+    #                          cwd=directory, shell=True, encoding='utf-8')
+    f=subprocess.check_output("gcc -I %s -E - <run_all.spec"%(os.environ.get("UCESB_DIR", "/")),
                               cwd=directory, shell=True, encoding='utf-8')
     # we can not modify locals() because python is a party pooper. 
     mod2trig=dict()   # module names to trigger (mapname, index)

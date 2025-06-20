@@ -24,7 +24,7 @@ setup(name="h101",
       ext_modules=[Extension(name="_h101", 
                              sources=["_h101module.cxx", "ext_data_client.c"],
                              extra_compile_args=["-O0","-fno-inline-small-functions",
-                                                 "--std=c++20",
+                                                 "--std=c++2a",
                                                  "-g", "-Wno-unused-function", "-Wno-unused-variable", 
                                                  "-Wno-write-strings", # PyArg kw
                                                  "-I"+toplevel,

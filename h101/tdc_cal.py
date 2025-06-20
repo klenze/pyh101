@@ -1,7 +1,12 @@
 from h101.iteminfo import *
 import math
-
+import random
 nan=float("nan")
+
+mincount=1e4           # statistics required before we apply the calibration
+update_interval = 2000 # how often should we recalculate the CDF?
+stat_lifetime   = 1e5  # how long does a count contribute to the calibration?
+ 
 
 class finetime_cal:
     def __init__(self, finebins=1024):
@@ -11,35 +16,30 @@ class finetime_cal:
         self.cdf=numpy.array([float("nan")]*finebins, dtype=numpy.float32)
         self.count=0
         self.finebins=finebins
-        self.mincount=1e4           # statistics required before we apply the calibration
-        self.update_interval = 2000 # how often should we recalculate the CDF?
-        self.stat_lifetime   = 1e5  # how long does a count contribute to the calibration?
-        if True:
-            self.mincount=2000
-            self.update_interval=2000
 
     def updateCDF(self):
         """Update the cumulative distribution function from the PMF"""
-        if self.count<self.mincount:
-            # we do not have enough stats for a calibration. keep returning nans.
-            return
         tot=sum(self.pmf)
         s=0
-        scale=math.exp(-self.update_interval/self.stat_lifetime)
+        scale=math.exp(-update_interval/stat_lifetime)
         for i,p in enumerate(self.pmf):
-            s+=p/2/tot
+            s+=p/tot
             self.cdf[i]=s
-            s+=p/2/tot
             self.pmf[i]*=scale # decay
+        assert 0.99<s and s<1.01, "bad sum: %f"%s
     def cal(self, raw):
-        if raw>=self.finebins:
+        if raw>=self.finebins or raw<=0:
             return float("nan")
         self.pmf[raw]+=1
         self.count+=1
-        if self.count % self.update_interval == 0:
+        if self.count<mincount:
+            # we do not have enough stats for a calibration. keep returning nans.
+            return float("nan")
+        elif self.count % update_interval == 0:
             self.updateCDF()
-        return self.cdf[raw]
-
+        res=random.uniform(self.cdf[raw-1], self.cdf[raw])
+        assert math.isnan(res) or (0<=res and res<=1), "Illegal calibrated fine time: %s"%res
+        return res
 
 class tdc_hit:
     def __init__(self, time=None, tot=nan, trig=nan, is_trailing=False):

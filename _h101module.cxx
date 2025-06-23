@@ -539,12 +539,15 @@ struct wrts_iteminfo: public base_iteminfo
 };
 
 
+#define NO_TPAT_MASK 0x0 // do not check
+
 struct H101
 {
   PyObject ob_base;
 //   PyObject_HEAD;
    PyObject* triggermap {}; // to be set from python
    PyObject* unpacker   {}; // to be set from python
+   unsigned short tpat_mask = NO_TPAT_MASK; // to be overwritten from python
    int fd;
    std::vector<std::string> fieldnames{};
    PyObject* dict {};
@@ -555,6 +558,9 @@ struct H101
    std::vector<base_iteminfo*> items;
    std::map<std::string, base_iteminfo*> str2iteminfo;
    uint64_t relwr_base{}; // offset for 'relative white rabbit'. 
+   // for fast filtering:
+   uint32_t* tpat_len{};
+   uint32_t* tpat;
 };
 
 
@@ -681,6 +687,9 @@ static void pythonize1(H101* self) // stage 1: process raw items
 	     //printf("Mapped %s\n", item->_var_name);
 	}
 
+	// also fetch TPAT and TPATv
+	self->tpat_len=GETPTR(self->itemmap.at("TPAT"));
+	self->tpat=GETPTR(self->itemmap.at("TPATv"));
 }
 
 static void pythonize2(H101* self)  // stage 2: process stage one processors
@@ -813,21 +822,35 @@ H101_addfield(H101* self, PyObject * args, PyObject * kwds)
 static PyObject *
 H101_getevent(H101* self, PyObject *Py_UNUSED(ignored))
 {
-     noerrno;
-     int res=ext_data_fetch_event(self->client, self->buf, self->buflen, 0); 
-     if (res==0)
+     while (1)
      {
-	Py_XINCREF(Py_False);
-	return Py_False;
+        noerrno;
+        int res=ext_data_fetch_event(self->client, self->buf, self->buflen, 0); 
+        if (res==0)
+        {
+   	   Py_XINCREF(Py_False);
+	   return Py_False;
+        }
+        CHECK_EXT(res==1, nullptr, "fetch_event");
+	if (self->tpat_mask!=NO_TPAT_MASK)
+	{
+	   bool good=false;
+	   for (int i=0; i<*self->tpat_len; i++)
+	       if (self->tpat[i] & self->tpat_mask)
+	       {
+		    good=true;
+		    break;
+	       }
+	   if (!good)
+		   continue;
+	}
+        for (auto& ii: self->items)
+        {
+   	   ii->map_event();
+        }
+        Py_XINCREF(Py_True);
+        return Py_True;
      }
-     
-     CHECK_EXT(res==1, nullptr, "fetch_event");
-     for (auto& ii: self->items)
-     {
-	ii->map_event();
-     }
-     Py_XINCREF(Py_True);
-     return Py_True;
 }
 static PyObject *
 H101_getdict(H101* self, PyObject *Py_UNUSED(ignored))
@@ -840,6 +863,7 @@ H101_getdict(H101* self, PyObject *Py_UNUSED(ignored))
 static PyMemberDef H101_members[] = {
 	{"triggermap", T_OBJECT_EX, offsetof(H101, triggermap)},
 	{"unpacker",   T_OBJECT_EX, offsetof(H101, unpacker)},
+	{"tpat_mask",  T_USHORT,    offsetof(H101, tpat_mask)},
 	{nullptr, 0, 0}
 };
 

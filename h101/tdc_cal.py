@@ -1,19 +1,46 @@
 from h101.iteminfo import *
 import math
 import random
+import re
+import json
 nan=float("nan")
 
 mincount=1e4           # statistics required before we apply the calibration
 update_interval = 2000 # how often should we recalculate the CDF?
 stat_lifetime   = 1e5  # how long does a count contribute to the calibration?
- 
+
+allcals={}
+
+def readcals(filename):
+    global allcals
+    with open(filename, "r") as f:
+        allcals=json.load(f)
+
+
+def writecals(filename):
+    with open(filename, "w") as f:
+        json.dump(allcals, f)
+
+calinfo=[False, False] # what have we already whined about?
 
 class finetime_cal:
-    def __init__(self, finebins=1024):
+    def __init__(self, name, finebins=1024):
+        global calinfo
         # probability mass functions: finebins entries, initially zero
         self.pmf=numpy.array([0.0         ]*finebins, dtype=numpy.float32)
         # cumulative distribution function: finebins entries, initially nan
-        self.cdf=numpy.array([float("nan")]*finebins, dtype=numpy.float32)
+        self.name=name
+        if name in allcals:
+            self.cdf=numpy.array(allcals[name], dtype=numpy.float32)
+            if calinfo[0]:
+                  print("Using loaded calibrations for %s"%name)
+                  calinfo[0]=True
+        else:
+            self.cdf=numpy.array([float("nan")]*finebins, dtype=numpy.float32)
+            if not calinfo[1]:
+                calinfo[1]=True
+                print("Starting with a blank calibration for %s. It will take some time before calibrated data will be available"%name)
+        print("Calibration for %s is [%s...]"%(name, self.cdf[0:3]))
         self.count=0
         self.finebins=finebins
 
@@ -27,14 +54,14 @@ class finetime_cal:
             self.cdf[i]=s
             self.pmf[i]*=scale # decay
         assert 0.99<s and s<1.01, "bad sum: %f"%s
+        allcals[self.name]=list(map(float, self.cdf))
     def cal(self, raw):
         if raw>=self.finebins or raw<=0:
             return float("nan")
         self.pmf[raw]+=1
         self.count+=1
         if self.count<mincount:
-            # we do not have enough stats for a calibration. keep returning nans.
-            return float("nan")
+            pass # use previous calibration of loaded, but do not update yet
         elif self.count % update_interval == 0:
             self.updateCDF()
         res=random.uniform(self.cdf[raw-1], self.cdf[raw])
@@ -111,7 +138,9 @@ class tdc_iteminfo(custom_iteminfo):
         self.res.clear()
         for k in self.coarse.keys():
             out=self.res[k]=[]
-            cal=self.cals.setdefault(k, finetime_cal())
+            if not k in self.cals:
+                self.cals[k]=finetime_cal(self.name+str(k))
+            cal=self.cals[k]
             ck=tdc_iteminfo._listify(self.coarse[k])
             fk=tdc_iteminfo._listify(self.fine[k])
             for c, f in zip(ck, fk):
@@ -121,14 +150,19 @@ class tdc_iteminfo(custom_iteminfo):
                 out.append(h)
     @staticmethod
     def addFields(myh101):
+        count=0
         d=myh101.getdict()
         for k in list(d.keys()):
             base=k[0:-1]
-            if k[-1]=="C" and base+"F" in d:
+            if not filterre.match(base):
+                continue
+            if k[-1]=="C" and (f:=d.get(base+"F"))!=None:
                 c=d[k]
-                f=d[base+"F"]
                 tdc_iteminfo(base, c, f).register(myh101)
+                count+=1
+        return count
 
+filterre=re.compile(".*")
 
 class tot_iteminfo(custom_iteminfo):
     def __init__(self, name, leading, trailing, trig=None):
@@ -158,34 +192,40 @@ class tot_iteminfo(custom_iteminfo):
                 self.res[k]=out
     @staticmethod
     def addFields(myh101):
+        count=0
         d=myh101.getdict()
         added={}
         for k in list(d.keys()):
             if k[-2:]!="CL":
                 continue
-            if k[0]=='N': # neuland
-                continue
             base=k[:-2]
+            if not filterre.match(base):
+                continue
             cl=d.get(base+"CL") 
             fl=d.get(base+"FL")
             if cl==None or fl==None:
                 continue
-            leading=tdc_iteminfo(base+"_lead", cl, fl)
             ct=d.get(base+"CT")
             ft=d.get(base+"FT")
             if ct==None or ft==None:
+                leading=tdc_iteminfo(base, cl, fl)
                 leading.register(myh101, hidden=False)
+                count+=1
+                print("registered %s"%sbase)
                 added.append[base+"FT"]=leading
                 continue
+            leading=tdc_iteminfo(base+"_lead", cl, fl)
             leading.register(myh101, hidden=True)
             trailing=tdc_iteminfo(base+"_trail", ct, ft, is_trailing=True)
             trailing.register(myh101, hidden=True)
             tot=tot_iteminfo(base+"_tot", leading, trailing)
             tot.register(myh101, hidden=False)
+            count+=1
             added[base+"FT"]=tot
         for name, info in added.items():
             if name in myh101.triggermap and myh101.triggermap[name] in added:
                 info.trig=added[myh101.triggermap[name]]
+        return count
 
 
 

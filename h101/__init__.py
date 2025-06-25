@@ -29,8 +29,10 @@ def mkh101(inputs, unpacker=None):
         res.unpacker=sp
         t=test_iteminfo()
         t.register(res)
-        tdc_iteminfo.addFields(res)
-        tot_iteminfo.addFields(res)
+        n=tdc_iteminfo.addFields(res)
+        print("Added %d single edge TDC arrays"%n)
+        n=tot_iteminfo.addFields(res)
+        print("Added %d dual edge TDC arrays"%n)
         return res
  
 

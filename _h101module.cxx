@@ -492,7 +492,7 @@ struct wrts_iteminfo: public base_iteminfo
 	, id(id_)
 	, tn(tn_)
 	, rel(rel_)
-	, dest(register_obj(PyArrayScalar_New(UInt64)))
+	, dest(register_obj(PyArrayScalar_New(Int64)))
 	, np64(dest->ob_type)
 	{
 	}

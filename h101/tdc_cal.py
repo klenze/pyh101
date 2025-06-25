@@ -185,6 +185,7 @@ class tot_iteminfo(custom_iteminfo):
                 if it.is_trailing and prev and not prev.is_trailing:
                     # also changes object in leading array, is fine.
                     prev.tot=it.getTime()-prev.getTime()
+                    prev.totc=5*(it.coarse - prev.coarse)
                     prev.trig=trig
                     out.append(prev)
                 prev=it

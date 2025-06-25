@@ -11,7 +11,7 @@ if not 'UCESB_DIR' in os.environ:
 ucesb=os.environ['UCESB_DIR']
 
 
-def mkh101(inputs, unpacker=None):
+def mkh101(inputs, unpacker=None, options=""):
         if unpacker == None:
             if not 'EXP_NAME' in os.environ:
                 raise RuntimeError("No unpacker specified, and EXP_NAME is not set.")
@@ -20,12 +20,12 @@ def mkh101(inputs, unpacker=None):
             upexps="%s/../upexps/%s/%s"%(ucesb, unpacker, unpacker)
         else:
             upexps=unpacker
-        upexpscall=upexps+" %s --quiet --ntuple=RAW,STRUCT,-"%inputs
+        upexpscall=upexps+" %s %s --quiet --ntuple=RAW,STRUCT,-"%(options, inputs)
         print("Running unpacker: %s"%upexpscall)
         sp=subprocess.Popen(upexpscall, shell=True,
                             stdout=subprocess.PIPE)
         res=H101(fd=sp.stdout.fileno())
-        res.triggermap=trigger_map.parse_channels(os.path.dirname(upexps))
+        res.triggermap=trigger_map.parse_channels(upexps)
         res.unpacker=sp
         t=test_iteminfo()
         t.register(res)

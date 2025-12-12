@@ -40,7 +40,7 @@ class finetime_cal:
             if not calinfo[1]:
                 calinfo[1]=True
                 print("Starting with a blank calibration for %s. It will take some time before calibrated data will be available"%name)
-        print("Calibration for %s is [%s...]"%(name, self.cdf[0:3]))
+        #print("Calibration for %s is [%s...]"%(name, self.cdf[0:3]))
         self.count=0
         self.finebins=finebins
 
@@ -74,8 +74,8 @@ class tdc_hit:
             self.time=time
             self.weight=1
         else:
-            self.time=0.0
-            self.weight=0
+            self.time=nan
+            self.weight=1
         self.tot=tot
         self.is_trailing=is_trailing
         self.trig=trig
@@ -154,9 +154,10 @@ class tdc_iteminfo(custom_iteminfo):
         d=myh101.getdict()
         for k in list(d.keys()):
             base=k[0:-1]
-            if not filterre.match(base):
+            if filterre.match(base)==None:
                 continue
-            if k[-1]=="C" and (f:=d.get(base+"F"))!=None:
+            f=d.get(base+"F") # old python does not like := syntax
+            if k[-1]=="C" and f!=None:
                 c=d[k]
                 tdc_iteminfo(base, c, f).register(myh101)
                 count+=1
@@ -197,29 +198,39 @@ class tot_iteminfo(custom_iteminfo):
         d=myh101.getdict()
         added={}
         for k in list(d.keys()):
-            if k[-2:]!="CL":
+            if k[-2:]=="CL":
+                fmt="{0}{1}"
+            elif k[-2:]=="LC":
+                fmt="{1}{0}"
+            else:
+                #print("rejected %s, wrong suffix"%k)
                 continue
             base=k[:-2]
-            if not filterre.match(base):
+            if filterre.match(base)==None:
+                #print("rejected %s because re failed. %s"
+                #       %(base, filterre.match(base)))
                 continue
-            cl=d.get(base+"CL") 
-            fl=d.get(base+"FL")
+            cl=d.get(base+fmt.format("C", "L")) 
+            fl=d.get(base+fmt.format("F", "L"))
+            print("considering %s ... "%base)
             if cl==None or fl==None:
+                print("rejected, cl==%s, fl=%s"%(cl, fl))
                 continue
-            ct=d.get(base+"CT")
-            ft=d.get(base+"FT")
+            ct=d.get(base+fmt.format("C" ,"T"))
+            ft=d.get(base+fmt.format("F", "T"))
             if ct==None or ft==None:
                 leading=tdc_iteminfo(base, cl, fl)
                 leading.register(myh101, hidden=False)
                 count+=1
-                print("registered %s"%sbase)
-                added.append[base+"FT"]=leading
+                print("registered %s (leading only)"%base)
+                added[base+"FT"]=leading
                 continue
             leading=tdc_iteminfo(base+"_lead", cl, fl)
             leading.register(myh101, hidden=True)
             trailing=tdc_iteminfo(base+"_trail", ct, ft, is_trailing=True)
             trailing.register(myh101, hidden=True)
             tot=tot_iteminfo(base+"_tot", leading, trailing)
+            print("added %s (leading+trailing=tot)"%base)
             tot.register(myh101, hidden=False)
             count+=1
             added[base+"FT"]=tot

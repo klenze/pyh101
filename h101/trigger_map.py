@@ -18,7 +18,8 @@ def parse_channels(upexps):
     #f=subprocess.check_output("gcc -I gen_%s -E mapping.hh"%(os.path.basename(directory)),
     #                          cwd=directory, shell=True, encoding='utf-8')
     f=subprocess.check_output("gcc -I %s -E - <%s.spec"%(os.environ.get("UCESB_DIR", "/"), filename),
-                              cwd=directory, shell=True, encoding='utf-8')
+                              cwd=directory, shell=True)
+    f=f.decode('utf-8')
     # we can not modify locals() because python is a party pooper. 
     mod2trig=dict()   # module names to trigger (mapname, index)
     mapped2mod=dict() # (mapped name, idx) to module name

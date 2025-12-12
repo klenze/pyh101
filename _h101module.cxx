@@ -560,7 +560,7 @@ struct H101
    uint64_t relwr_base{}; // offset for 'relative white rabbit'. 
    // for fast filtering:
    uint32_t* tpat_len{};
-   uint32_t* tpat;
+   uint32_t* tpat{};
 };
 
 
@@ -688,8 +688,15 @@ static void pythonize1(H101* self) // stage 1: process raw items
 	}
 
 	// also fetch TPAT and TPATv
-	self->tpat_len=GETPTR(self->itemmap.at("TPAT"));
-	self->tpat=GETPTR(self->itemmap.at("TPATv"));
+        if (self->itemmap.count("TPAT") && self->itemmap.count("TPATv"))
+	{  
+             self->tpat_len=GETPTR(self->itemmap.at("TPAT"));
+	     self->tpat=GETPTR(self->itemmap.at("TPATv"));
+        }
+        else
+        {
+             self->tpat_len=new uint32_t(0);
+        }
 }
 
 static void pythonize2(H101* self)  // stage 2: process stage one processors

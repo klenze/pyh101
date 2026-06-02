@@ -3,6 +3,7 @@ import os.path, os
 from setuptools import setup, Extension
 import sysconfig
 
+import numpy as np
 
 toplevel=os.path.dirname(__file__)
 
@@ -13,9 +14,7 @@ ucesb=os.environ['UCESB_DIR']
 
 
 
-# there has to be a better way to do this
 
-npinc="-I"+sysconfig.get_paths()["purelib"]+"/numpy/_core/include/"
 
 
 setup(name="h101", 
@@ -24,14 +23,13 @@ setup(name="h101",
       ext_modules=[Extension(name="_h101", 
                              sources=["_h101module.cxx", "ext_data_client.c"],
                              extra_compile_args=["-O0","-fno-inline-small-functions",
-                                                 "--std=c++14",
+                                                 "--std=c++2a",
                                                  "-g", "-Wno-unused-function", "-Wno-unused-variable", 
                                                  "-Wno-write-strings", # PyArg kw
                                                  "-I"+toplevel,
-                                                 "-I"+ucesb+"/hbook",
-                                                 npinc
+                                                 "-I"+ucesb+"/hbook"
                                                  ],
-                                          #include_dirs=[toplevel, ucesb+"/hbook"]
+                                          include_dirs=[toplevel, ucesb+"/hbook", np.get_include()]
 #                                          extra_link_args=["-L${UCESB_DIR}/hbook -lext_data_clnt.so"]
                                           )])
 

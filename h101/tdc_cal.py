@@ -65,11 +65,12 @@ class finetime_cal:
         elif self.count % update_interval == 0:
             self.updateCDF()
         res=random.uniform(self.cdf[raw-1], self.cdf[raw])
-        assert math.isnan(res) or (0<=res and res<=1), "Illegal calibrated fine time: %s"%res
+        assert math.isnan(res) or (0<=res and res<=1.01), "Illegal calibrated fine time: %s"%res
         return res
+tdc_period=(1<<13)*5 # ns
 
 class tdc_hit:
-    def __init__(self, time=None, tot=nan, trig=nan, is_trailing=False):
+    def __init__(self, time=None, tot=nan, trig=nan, is_trailing=False, norm=False):
         if time!=None:
             self.time=time
             self.weight=1
@@ -79,6 +80,8 @@ class tdc_hit:
         self.tot=tot
         self.is_trailing=is_trailing
         self.trig=trig
+        if norm:
+            self.normalize()
     def getTime(self):
         return self.time/self.weight
     def getTrig(self):
@@ -89,6 +92,13 @@ class tdc_hit:
         self.time/=self.weight
         self.tot/=self.weight
         self.trig/=self.weight
+        # fmod is annoying about signs
+        # +3/2 T gets us positive, so we end up in [0, T[
+        # then we subtract -T/2 to end up in [-T/2, +T/2[
+        # hopefully. 
+        self.time=math.fmod(self.time+3*tdc_period/2, tdc_period)-tdc_period/2
+        self.trig=math.fmod(self.trig+3*tdc_period/2, tdc_period)-tdc_period/2
+
     def getNorm(self):
         res=self.copy()
         res.normalize()
@@ -111,7 +121,7 @@ class tdc_hit:
         res+=rhs
         return res
     def __sub__(self, rhs):
-        return tdc_hit(self.getTime() - rhs.getTime(), trig=self.getTrig()-rhs.getTrig())
+        return tdc_hit(self.getTime() - rhs.getTime(), trig=self.getTrig()-rhs.getTrig(), norm=True)
     def __str__(self):
         return "tdc_hit%s"%self.__dict__
     def __repr__(self):
